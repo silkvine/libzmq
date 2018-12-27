@@ -76,6 +76,18 @@ int zmq::pipepair (class object_t *parents_[2],
     return 0;
 }
 
+void zmq::send_routing_id (pipe_t *pipe_, const options_t &options_)
+{
+    zmq::msg_t id;
+    const int rc = id.init_size (options_.routing_id_size);
+    errno_assert (rc == 0);
+    memcpy (id.data (), options_.routing_id, options_.routing_id_size);
+    id.set_flags (zmq::msg_t::routing_id);
+    const bool written = pipe_->write (&id);
+    zmq_assert (written);
+    pipe_->flush ();
+}
+
 zmq::pipe_t::pipe_t (object_t *parent_,
                      upipe_t *inpipe_,
                      upipe_t *outpipe_,
@@ -540,4 +552,14 @@ bool zmq::pipe_t::check_hwm () const
 void zmq::pipe_t::send_hwms_to_peer (int inhwm_, int outhwm_)
 {
     send_pipe_hwm (_peer, inhwm_, outhwm_);
+}
+
+void zmq::pipe_t::set_endpoint_uri (const char *name_)
+{
+    _endpoint_uri = name_;
+}
+
+std::string &zmq::pipe_t::get_endpoint_uri ()
+{
+    return _endpoint_uri;
 }

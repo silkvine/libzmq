@@ -79,6 +79,40 @@ int test_assert_success_message_raw_errno_helper (int rc_,
     return rc_;
 }
 
+int test_assert_failure_message_raw_errno_helper (int rc_,
+                                                  int expected_errno_,
+                                                  const char *msg_,
+                                                  const char *expr_)
+{
+    char buffer[512];
+    buffer[sizeof (buffer) - 1] =
+      0; // to ensure defined behavior with VC++ <= 2013
+    if (rc_ != -1) {
+        snprintf (buffer, sizeof (buffer) - 1,
+                  "%s was unexpectedly successful%s%s%s, expected "
+                  "errno = %i, actual return value = %i",
+                  expr_, msg_ ? " (additional info: " : "", msg_ ? msg_ : "",
+                  msg_ ? ")" : "", expected_errno_, rc_);
+        TEST_FAIL_MESSAGE (buffer);
+    } else {
+#if defined ZMQ_HAVE_WINDOWS
+        int current_errno = WSAGetLastError ();
+#else
+        int current_errno = errno;
+#endif
+        if (current_errno != expected_errno_) {
+            snprintf (buffer, sizeof (buffer) - 1,
+                      "%s failed with an unexpected error%s%s%s, expected "
+                      "errno = %i, actual errno = %i",
+                      expr_, msg_ ? " (additional info: " : "",
+                      msg_ ? msg_ : "", msg_ ? ")" : "", expected_errno_,
+                      current_errno);
+            TEST_FAIL_MESSAGE (buffer);
+        }
+    }
+    return rc_;
+}
+
 #define TEST_ASSERT_SUCCESS_MESSAGE_ERRNO(expr, msg)                           \
     test_assert_success_message_errno_helper (expr, msg, #expr)
 
@@ -88,10 +122,13 @@ int test_assert_success_message_raw_errno_helper (int rc_,
 #define TEST_ASSERT_SUCCESS_RAW_ERRNO(expr)                                    \
     test_assert_success_message_raw_errno_helper (expr, NULL, #expr)
 
+#define TEST_ASSERT_FAILURE_RAW_ERRNO(error_code, expr)                        \
+    test_assert_failure_message_raw_errno_helper (expr, error_code, NULL, #expr)
+
 #define TEST_ASSERT_FAILURE_ERRNO(error_code, expr)                            \
     {                                                                          \
-        int rc = (expr);                                                       \
-        TEST_ASSERT_EQUAL_INT (-1, rc);                                        \
+        int _rc = (expr);                                                      \
+        TEST_ASSERT_EQUAL_INT (-1, _rc);                                       \
         TEST_ASSERT_EQUAL_INT (error_code, errno);                             \
     }
 
@@ -116,6 +153,32 @@ void recv_string_expect_success (void *socket_, const char *str_, int flags_)
     TEST_ASSERT_EQUAL_INT ((int) len, rc);
     if (str_)
         TEST_ASSERT_EQUAL_STRING_LEN (str_, buffer, len);
+}
+
+template <size_t SIZE>
+void send_array_expect_success (void *socket_,
+                                const uint8_t (&array_)[SIZE],
+                                int flags_)
+{
+    const int rc = zmq_send (socket_, array_, SIZE, flags_);
+    TEST_ASSERT_EQUAL_INT (static_cast<int> (SIZE), rc);
+}
+
+template <size_t SIZE>
+void recv_array_expect_success (void *socket_,
+                                const uint8_t (&array_)[SIZE],
+                                int flags_)
+{
+    char buffer[255];
+    TEST_ASSERT_LESS_OR_EQUAL_MESSAGE (sizeof (buffer), SIZE,
+                                       "recv_string_expect_success cannot be "
+                                       "used for strings longer than 255 "
+                                       "characters");
+
+    const int rc = TEST_ASSERT_SUCCESS_ERRNO (
+      zmq_recv (socket_, buffer, sizeof (buffer), flags_));
+    TEST_ASSERT_EQUAL_INT (static_cast<int> (SIZE), rc);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY (array_, buffer, SIZE);
 }
 
 // do not call from tests directly, use setup_test_context, get_test_context and teardown_test_context only
@@ -175,7 +238,9 @@ void internal_manage_test_sockets (void *socket_, bool add_)
                         test_sockets[i] = test_sockets[i + 1];
                 }
             }
-            TEST_ASSERT_TRUE (found);
+            TEST_ASSERT_TRUE_MESSAGE (found,
+                                      "Attempted to close a socket that was "
+                                      "not created by test_context_socket");
             --test_socket_count;
         }
     }

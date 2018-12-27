@@ -36,6 +36,7 @@
 #include "stdint.hpp"
 #include "array.hpp"
 #include "blob.hpp"
+#include "options.hpp"
 
 namespace zmq
 {
@@ -140,6 +141,9 @@ class pipe_t : public object_t,
     //  Returns true if HWM is not reached
     bool check_hwm () const;
 
+    void set_endpoint_uri (const char *name_);
+    std::string &get_endpoint_uri ();
+
   private:
     //  Type of the underlying lock-free pipe.
     typedef ypipe_base_t<msg_t> upipe_t;
@@ -235,9 +239,6 @@ class pipe_t : public object_t,
     //  Routing id of the writer. Used uniquely by the reader side.
     int _server_socket_routing_id;
 
-    //  Pipe's credential.
-    blob_t _credential;
-
     //  Returns true if the message is delimiter; false otherwise.
     static bool is_delimiter (const msg_t &msg_);
 
@@ -246,10 +247,16 @@ class pipe_t : public object_t,
 
     const bool _conflate;
 
+    // If the pipe belongs to socket's endpoint the endpoint's name is stored here.
+    // Otherwise this is empty.
+    std::string _endpoint_uri;
+
     //  Disable copying.
     pipe_t (const pipe_t &);
     const pipe_t &operator= (const pipe_t &);
 };
+
+void send_routing_id (pipe_t *pipe_, const options_t &options_);
 }
 
 #endif
